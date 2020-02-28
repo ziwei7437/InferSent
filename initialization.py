@@ -62,3 +62,18 @@ def get_seed(seed):
 def save_args(args):
     with open(os.path.join(args.output_dir, "args.json"), "w") as f:
         f.write(json.dumps(vars(args), indent=2))
+
+
+def get_opt_train_steps(num_train_examples, args):
+    num_train_steps = int(
+        num_train_examples
+        / args.train_batch_size
+        / args.gradient_accumulation_steps
+        * args.num_train_epochs,
+    )
+    t_total = num_train_steps
+    if args.local_rank != -1:
+        t_total = t_total // torch.distributed.get_world_size()
+    return t_total
+
+    

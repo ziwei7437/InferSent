@@ -15,14 +15,17 @@ import logging
 import numpy as np
 
 import torch
-from torch.autograd import Variable
+#from torch.autograd import Variable
+from torch import optim
 import torch.nn as nn
 
-from data import get_nli, get_batch, build_vocab
-from tasks import get_task
-from mutils import get_optimizer
+#from data import get_nli, get_batch, build_vocab
+from tasks import get_task, MnliMismatchedProcessor
+#from mutils import get_optimizer
 from models import InferSent, SimpleClassifier
+
 import initialization
+from runner import RunnerParameters, GlueTaskClassifierRunner
 
 
 def get_args(*in_args):
@@ -68,6 +71,12 @@ def get_args(*in_args):
     parser.add_argument("--decay", type=float, default=0.99, help="lr decay")
     parser.add_argument("--minlr", type=float, default=1e-5, help="minimum lr")
     parser.add_argument("--max_norm", type=float, default=5., help="max norm (grad clipping)")
+
+    # tasks
+    parser.add_argument("--do_train", action="store_true")
+    parser.add_argument("--do_val", action="store_true")
+
+    # training args for classifier
     parser.add_argument("--force-overwrite", action="store_true")
     parser.add_argument('--gradient_accumulation_steps',
                         type=int,
@@ -77,6 +86,23 @@ def get_args(*in_args):
                         type=int,
                         default=-1,
                         help="local_rank for distributed training on gpus")
+    parser.add_argument("--warmup_proportion",
+                        default=0.1,
+                        type=float,
+                        help="Proportion of training to perform linear learning rate warmup for. "
+                             "E.g., 0.1 = 10%% of training.")
+    parser.add_argument("--train_batch_size",
+                        default=32,
+                        type=int,
+                        help="Total batch size for training.")
+    parser.add_argument("--eval_batch_size",
+                        default=32,
+                        type=int,
+                        help="Total batch size for eval.")
+    parser.add_argument("--num_train_epochs",
+                        default=3.0,
+                        type=float,
+                        help="Total number of training epochs to perform.")
 
     # model
     parser.add_argument("--enc_lstm_dim", type=int, default=2048, help="encoder nhid dimension")
@@ -110,18 +136,6 @@ def get_args(*in_args):
 def print_args(args):
     for k, v in vars(args).items():
         print("  {}: {}".format(k, v))
-
-
-def init_seed(args, n_gpu, logger):
-    seed = get_seed(args.seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    logger.info("Using seed: {}".format(seed))
-    args.seed = seed
-
-    if n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
 
 
 def trainepoch(epoch):
@@ -306,7 +320,54 @@ def main():
     # load classifier
     classifier = SimpleClassifier(config)
 
+    # get train examples
+    train_examples = task.get_train_examples()
+    # calculate t_total
+    t_total = initialization.get_opt_train_steps(len(train_examples), args)
+
+
+    # build optimizer.
+    optimizer = optim.SGD(classifier.parameters(), lr=0.001, momentum=0.9)
+
+    # create running parameters
+    r_params = RunnerParameters(
+        locak_rank=args.local_rank,
+        n_gpu=n_gpu,
+        learning_rate=5e-5, #depracated.
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        t_total=t_total,
+        warmup_proportion=args.warmup_proportion,
+        num_train_epochs=args.num_train_epochs,
+        train_batch_size=args.train_batch_size,
+        eval_batch_size=args.eval_batch_size
+    )
     
+    # create runner class for training and evaluation tasks.
+    runner = GlueTaskClassifierRunner(
+        encoder_model = model,
+        classifier_model = classifier,
+        optimizer = optimizer,
+        label_list = task.get_label_list(),
+        device = device,
+        rparams = r_params
+    )
+
+
+    if args.do_train:
+        # TODO
+        runner.run_train_classifier(train_examples)
+
+    if args.do_val:
+        # TODO
+        val_examples = task.get_dev_examples()
+        
+        # TODO
+
+        # HACK for MNLI-mismatched
+        if task.name == "mnli":
+            mm_val_example = MnliMismatchedProcessor().get_dev_examples(task.data_dir)
+            mm_results = runner.run_val()# TODO...
+
 
 
 
