@@ -1,0 +1,3 @@
+from tasks import get_task
+
+task = get_task("mnli", "") # TODO dir, test examples...

@@ -376,5 +376,5 @@ class SimpleClassifier(nn.Module):
             return loss
         else:
             return logits
-        
+
 

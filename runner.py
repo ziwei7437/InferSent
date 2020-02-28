@@ -106,6 +106,7 @@ class GlueTaskClassifierRunner:
             self.optimizer.zero_grad()
             train_epoch_state.global_step += 1
 
+    # TODO
     def run_val(self, val_examples, task_name, verbose=True):
         val_dataloader = self.get_eval_dataloader(val_examples, verbose=verbose)
         self.classifier_model.eval()
