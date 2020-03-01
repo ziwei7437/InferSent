@@ -7,12 +7,106 @@ from torch.utils.data import TensorDataset, DataLoader, RandomSampler, Sequentia
 
 import logging
 from tqdm import tqdm, trange
+from .tasks import InputExample, InputFeatures
+
+
+logger = logging.getLogger(__name__)
+
+def is_null_label_map(label_map):
+    return len(label_map) == 1 and label_map[None] == 0
+
+
+def get_label_mode(label_map):
+    if is_null_label_map(label_map):
+        return LabelModes.REGRESSION
+    else:
+        return LabelModes.CLASSIFICATION
 
 
 def warmup_linear(x, warmup=0.002):
     if x < warmup:
         return x/warmup
     return 1.0 - x
+
+
+def convert_example_to_feature(example, label_map):
+    '''convert example to feature. only change the label into feature if label map exists'''
+    s1, s2 = example.text_a, example.text_b
+    if is_null_label_map(label_map):
+        label_id = example.label
+    else:
+        label_id = label_map[example.label]
+    return InputFeatures(
+        guid=example.guid,
+        sent1=s1,
+        sent2=s2,
+        label_id=label_id
+    )
+
+
+def convert_examples_to_features(examples, label_map, verbose=True):
+    """Load a dataset into a list of `InputFeatures`."""
+    features = []
+    for (ex_index, example) in enumerate(examples):
+        feature_instance = convert_example_to_feature(example=example, label_map=label_map)
+        if verbose and ex_index < 5:
+            logger.info("*** Example ***")
+            logger.info("guid: %s" % example.guid)
+            logger.info("sentence 1: %s" % example.text_a)
+            logger.info("sentence 2: %s" % example.text_b)
+            logger.info("label: %s (id = %d)" % (example.label, feature_instance.label_id))
+        features.append(feature_instance)
+    return features
+
+
+def get_full_batch(features, label_mode):
+    full_batch = features_to_data(features, label_mode=label_mode)
+    return full_batch
+
+
+
+def features_to_data(features, label_mode):
+    if label_mode == LabelModes.CLASSIFICATION:
+        label_type = torch.long
+    elif label_mode == LabelModes.REGRESSION:
+        label_type = torch.float
+    else:
+        raise KeyError(label_mode)
+    return Batch(
+        sent1s=[f.sent1 for f in features],
+        sent2s=[f.sent2 for f in features],
+        label_ids=torch.tensor([f.label_id for f in features], dtype=label_type),
+    )
+
+
+
+class LabelModes:
+    CLASSIFICATION = "CLASSIFICATION"
+    REGRESSION = "REGRESSION"
+
+
+class Batch:
+    def __init__(self, sent1s, sent2s, label_ids):
+        self.sent1s = sent1s
+        self.sent2s = sent2s
+        self.label_ids = label_ids
+
+    def to(self, device):
+        return Batch(
+            sent1s=self.sent1s.to(device),
+            sent2s=self.sent2s.to(device),
+            label_ids=self.label_ids.to(device),
+        )
+
+    def __len__(self):
+        return len(self.sent1s)
+
+    def __getitem__(self, key):
+        return Batch(
+            sent1s=self.sent1s[key],
+            sent2s=self.sent2s[key],
+            label_ids=self.label_ids[key],
+        )
 
 
 class TrainEpochState:
@@ -36,6 +130,7 @@ class RunnerParameters:
         self.num_train_epochs = num_train_epochs
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
+
 
 
 class GlueTaskClassifierRunner:
@@ -78,12 +173,21 @@ class GlueTaskClassifierRunner:
 
     def run_train_step(self, step, batch, train_epoch_state):
 
-        batch = batch.to(self.device)
+        
         self.encoder_model.eval()
+        # need to convert to list of sentences
+        batch = batch.to(self.device)
+        # TODO ...
+
+        s1 = []
+        s2 = []
+
+        # TODO ...
+
         with torch.no_grad():
             # sent1 sent2 embeddings...
-            s1_emb = #...
-            s2_emb = #...
+            s1_emb = self.encoder_model.encode(s1, bsize=rparams.train_batch_size, tokenize=False, verbose=True)
+            s2_emb = self.encoder_model.encode(s2, bsize=rparams.train_batch_size, tokenize=False, verbose=True
         
         loss = self.classifier_model(s1_emb, s2_emb, labels = batch.label_ids)
         if self.rparams.n_gpu > 1:
@@ -173,4 +277,3 @@ class GlueTaskClassifierRunner:
         )
         return HybridLoader(eval_dataloader, eval_tokens)
     
-

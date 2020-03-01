@@ -354,14 +354,12 @@ def main():
 
 
     if args.do_train:
-        # TODO
         runner.run_train_classifier(train_examples)
 
     if args.do_val:
-        # TODO
         val_examples = task.get_dev_examples()
-        
-        # TODO
+        results = runner.run_val() # TODO...
+
 
         # HACK for MNLI-mismatched
         if task.name == "mnli":

@@ -37,6 +37,27 @@ class InputExample(object):
         return self.__class__(**kwargs)
 
 
+class InputFeatures(object):
+    """A single set of features of data."""
+
+    def __init__(self, guid, sent1, sent2, label_id):
+        self.guid = guid
+        self.sent1 = sent1
+        self.sent2 = sent2
+        self.label_id = label_id
+
+    def new(self, **new_kwargs):
+        kwargs = {
+            "guid": self.guid,
+            "sent1": self.sent1,
+            "sent2": self.sent2,
+            "label_id": self.label_id,
+        }
+        for k, v in new_kwargs.items():
+            kwargs[k] = v
+        return self.__class__(**kwargs)
+
+
 class TaskType:
     REGRESSION = "REGRESSION"
     CLASSIFICATION = "CLASSIFICATION"
@@ -310,6 +331,52 @@ class SnliProcessor(DataProcessor):
             text_a = line[7]
             text_b = line[8]
             label = line[-1]
+            examples.append(
+                    InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
+
+
+class QqpProcessor(DataProcessor):
+    """Processor for the QQP data set (GLUE version)."""
+    TASK_TYPE = TaskType.CLASSIFICATION
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+                self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+                self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+
+    def get_test_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(
+            self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
+
+    def get_labels(self):
+        """See base class."""
+        return ["0", "1"]
+
+    def _create_examples(self, lines, set_type):
+        """Creates examples for the training and dev sets."""
+        examples = []
+        for (i, line) in enumerate(lines):
+            if i == 0:
+                continue
+            guid = "%s-%s" % (set_type, i)
+            try:
+                if set_type == "test":
+                    text_a = line[1]
+                    text_b = line[2]
+                    label = "0"
+                else:
+                    text_a = line[3]
+                    text_b = line[4]
+                    label = line[5]
+            except IndexError:
+                continue
             examples.append(
                     InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
