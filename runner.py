@@ -15,19 +15,16 @@ logger = logging.getLogger(__name__)
 def is_null_label_map(label_map):
     return len(label_map) == 1 and label_map[None] == 0
 
-
 def get_label_mode(label_map):
     if is_null_label_map(label_map):
         return LabelModes.REGRESSION
     else:
         return LabelModes.CLASSIFICATION
 
-
 def warmup_linear(x, warmup=0.002):
     if x < warmup:
         return x/warmup
     return 1.0 - x
-
 
 def convert_example_to_feature(example, label_map):
     '''convert example to feature. only change the label into feature if label map exists'''
@@ -43,7 +40,6 @@ def convert_example_to_feature(example, label_map):
         label_id=label_id
     )
 
-
 def convert_examples_to_features(examples, label_map, verbose=True):
     """Load a dataset into a list of `InputFeatures`."""
     features = []
@@ -58,12 +54,9 @@ def convert_examples_to_features(examples, label_map, verbose=True):
         features.append(feature_instance)
     return features
 
-
 def get_full_batch(features, label_mode):
     full_batch = features_to_data(features, label_mode=label_mode)
     return full_batch
-
-
 
 def features_to_data(features, label_mode):
     if label_mode == LabelModes.CLASSIFICATION:
@@ -73,11 +66,9 @@ def features_to_data(features, label_mode):
     else:
         raise KeyError(label_mode)
     return Batch(
-        sent1s=[f.sent1 for f in features],
-        sent2s=[f.sent2 for f in features],
+        pairs=[(f.sent1, f.sent2, torch.tensor(f.label_id)) for f in features],
         label_ids=torch.tensor([f.label_id for f in features], dtype=label_type),
     )
-
 
 
 class LabelModes:
@@ -86,15 +77,13 @@ class LabelModes:
 
 
 class Batch:
-    def __init__(self, sent1s, sent2s, label_ids):
-        self.sent1s = sent1s
-        self.sent2s = sent2s
+    def __init__(self, pairs, label_ids):
         self.label_ids = label_ids
+        self.pairs = pairs
 
     def to(self, device):
         return Batch(
-            sent1s=self.sent1s.to(device),
-            sent2s=self.sent2s.to(device),
+            pairs=self.pairs.to(device),
             label_ids=self.label_ids.to(device),
         )
 
@@ -103,8 +92,7 @@ class Batch:
 
     def __getitem__(self, key):
         return Batch(
-            sent1s=self.sent1s[key],
-            sent2s=self.sent2s[key],
+            pairs=self.pairs[key],
             label_ids=self.label_ids[key],
         )
 
@@ -130,7 +118,6 @@ class RunnerParameters:
         self.num_train_epochs = num_train_epochs
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
-
 
 
 class GlueTaskClassifierRunner:
@@ -172,24 +159,20 @@ class GlueTaskClassifierRunner:
             yield step, batch, train_epoch_state
 
     def run_train_step(self, step, batch, train_epoch_state):
-
-        
         self.encoder_model.eval()
-        # need to convert to list of sentences
-        batch = batch.to(self.device)
-        # TODO ...
-
-        s1 = []
-        s2 = []
-
-        # TODO ...
+        s1 = batch[0]
+        s2 = batch[1]
 
         with torch.no_grad():
             # sent1 sent2 embeddings...
-            s1_emb = self.encoder_model.encode(s1, bsize=rparams.train_batch_size, tokenize=False, verbose=True)
-            s2_emb = self.encoder_model.encode(s2, bsize=rparams.train_batch_size, tokenize=False, verbose=True
+            s1_emb = self.encoder_model.encode(s1, bsize=self.rparams.train_batch_size, tokenize=False, verbose=True)
+            s2_emb = self.encoder_model.encode(s2, bsize=self.rparams.train_batch_size, tokenize=False, verbose=True)
         
-        loss = self.classifier_model(s1_emb, s2_emb, labels = batch.label_ids)
+        s1_emb = torch.tensor(s1_emb).to(self.device)
+        s2_emb = torch.tensor(s2_emb).to(self.device)
+        labels = batch[-1].to(self.device)
+
+        loss = self.classifier_model(s1_emb, s2_emb, labels = labels)
         if self.rparams.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
         if self.rparams.gradient_accumulation_steps > 1:
@@ -198,7 +181,7 @@ class GlueTaskClassifierRunner:
             loss.backward()
 
         train_epoch_state.tr_loss += loss.item()
-        train_epoch_state.nb_tr_examples += batch.input_ids.size(0)
+        train_epoch_state.nb_tr_examples += batch[-1].size(0)
         train_epoch_state.nb_tr_steps += 1
         if (step + 1) % self.rparams.gradient_accumulation_steps == 0:
             # modify learning rate with special warm up BERT uses
@@ -248,20 +231,20 @@ class GlueTaskClassifierRunner:
 
     def get_train_dataloader(self, train_examples, verbose=True):
         train_features = convert_examples_to_features(
-            train_examples, self.label_map, self.rparams.max_seq_length, self.tokenizer,
-            verbose=verbose,
+            train_examples, self.label_map, verbose=verbose,
         )
-        train_data, train_tokens = convert_to_dataset(
+        full_batch = get_full_batch(
             train_features, label_mode=get_label_mode(self.label_map),
         )
+        
         if self.rparams.local_rank == -1:
-            train_sampler = RandomSampler(train_data)
+            train_sampler = RandomSampler(full_batch.pairs)
         else:
-            train_sampler = DistributedSampler(train_data)
+            train_sampler = DistributedSampler(full_batch.pairs)
         train_dataloader = DataLoader(
-            train_data, sampler=train_sampler, batch_size=self.rparams.train_batch_size,
+            full_batch.pairs, sampler=train_sampler, batch_size=self.rparams.train_batch_size,
         )
-        return HybridLoader(train_dataloader, train_tokens)
+        return train_dataloader
 
     def get_eval_dataloader(self, eval_examples, verbose=True):
         eval_features = convert_examples_to_features(

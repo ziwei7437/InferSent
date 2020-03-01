@@ -293,7 +293,6 @@ def main():
 
     # model config
     config = {
-        'n_words'        :  len(word_vec)       ,
         'word_emb_dim'   :  args.word_emb_dim   ,
         'enc_lstm_dim'   :  args.enc_lstm_dim   ,
         'n_enc_layers'   :  args.n_enc_layers   ,
@@ -304,8 +303,7 @@ def main():
         'n_classes'      :  args.n_classes      ,
         'pool_type'      :  args.pool_type      ,
         'nonlinear_fc'   :  args.nonlinear_fc   ,
-        'encoder_type'   :  args.encoder_type   ,
-        'use_cuda'       :  args.no_cuda        ,
+        'use_cuda'       :  not args.no_cuda    ,
         'version'        :  args.model_version  ,
         'dropout_prob'   :  args.dropout_prob   ,
     }
@@ -331,9 +329,9 @@ def main():
 
     # create running parameters
     r_params = RunnerParameters(
-        locak_rank=args.local_rank,
+        local_rank=args.local_rank,
         n_gpu=n_gpu,
-        learning_rate=5e-5, #depracated.
+        learning_rate=5e-5,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         t_total=t_total,
         warmup_proportion=args.warmup_proportion,
@@ -347,7 +345,7 @@ def main():
         encoder_model = model,
         classifier_model = classifier,
         optimizer = optimizer,
-        label_list = task.get_label_list(),
+        label_list = task.get_labels(),
         device = device,
         rparams = r_params
     )

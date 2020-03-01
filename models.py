@@ -354,11 +354,12 @@ class SimpleClassifier(nn.Module):
         super(SimpleClassifier, self).__init__()
         # encoder: No encoder inside this class.
         # classifier: Do not follow the BERT built-in classifier anymore.
-        self.input_dim = 4*2*config.enc_lstm_dim
-        self.drop = nn.Dropout(config.dropout_prob)
+        self.input_dim = 4*2*config['enc_lstm_dim']
+        self.drop = nn.Dropout(config['dropout_prob'])
+        self.num_labels = config['n_classes']
         self.classifier = nn.Sequential(
-            nn.Linear(self.input_dim, config.fc_dim),
-            nn.Linear(config.fc_dim, config.n_classes)
+            nn.Linear(self.input_dim, config['fc_dim']),
+            nn.Linear(config['fc_dim'], self.num_labels)
         )
 
     def forward(self, s1_emb, s2_emb, labels=None):
@@ -368,7 +369,7 @@ class SimpleClassifier(nn.Module):
         u = s1_emb
         v = s2_emb
         features = torch.cat((u, v, torch.abs(u-v), u*v), 1)
-        logits = classifier(features)
+        logits = self.classifier(features)
         
         if labels is not None:
             loss_fct = CrossEntropyLoss()
