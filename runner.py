@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
-
+from torch.utils.data.distributed import DistributedSampler
 
 import logging
 from tqdm import tqdm, trange
@@ -107,7 +107,7 @@ class TrainEpochState:
 
 class RunnerParameters:
     def __init__(self, local_rank, n_gpu,learning_rate, gradient_accumulation_steps, 
-                t_total, warmup_proportion,
+                t_total, warmup_proportion, verbose,
                 num_train_epochs, train_batch_size, eval_batch_size):
         self.local_rank = local_rank
         self.n_gpu = n_gpu
@@ -118,6 +118,7 @@ class RunnerParameters:
         self.num_train_epochs = num_train_epochs
         self.train_batch_size = train_batch_size
         self.eval_batch_size = eval_batch_size
+        self.verbose = verbose
 
 
 class GlueTaskClassifierRunner:
@@ -165,8 +166,8 @@ class GlueTaskClassifierRunner:
 
         with torch.no_grad():
             # sent1 sent2 embeddings...
-            s1_emb = self.encoder_model.encode(s1, bsize=self.rparams.train_batch_size, tokenize=False, verbose=True)
-            s2_emb = self.encoder_model.encode(s2, bsize=self.rparams.train_batch_size, tokenize=False, verbose=True)
+            s1_emb = self.encoder_model.encode(s1, bsize=self.rparams.train_batch_size, tokenize=False, verbose=self.rparams.verbose)
+            s2_emb = self.encoder_model.encode(s2, bsize=self.rparams.train_batch_size, tokenize=False, verbose=self.rparams.verbose)
         
         s1_emb = torch.tensor(s1_emb).to(self.device)
         s2_emb = torch.tensor(s2_emb).to(self.device)
@@ -193,29 +194,37 @@ class GlueTaskClassifierRunner:
             self.optimizer.zero_grad()
             train_epoch_state.global_step += 1
 
-    # TODO
+
     def run_val(self, val_examples, task_name, verbose=True):
         val_dataloader = self.get_eval_dataloader(val_examples, verbose=verbose)
         self.classifier_model.eval()
-        self.bert_model.eval()
+        self.encoder_model.eval()
 
         total_eval_loss = 0
         nb_eval_steps, nb_eval_examples = 0, 0
         all_logits = []
         all_labels = []
         for step, batch in enumerate(tqdm(val_dataloader, desc="Evaluating (Val)")):
-            batch = batch.to(self.device)
+            #batch = batch.to(self.device)
+            s1 = batch[0]
+            s2 = batch[1]
 
             with torch.no_grad():
-                _, pooled_output = self.bert_model(batch.input_ids, batch.segment_ids, batch.input_mask, output_all_encoded_layers=False)
-                tmp_eval_loss = self.classifier_model(pooled_output, batch.label_ids)
-                logits = self.classifier_model(pooled_output)
-                label_ids = batch.label_ids.cpu().numpy()
+                s1_emb = self.encoder_model.encode(s1, bsize=self.rparams.eval_batch_size, tokenize=False, verbose=True)
+                s2_emb = self.encoder_model.encode(s2, bsize=self.rparams.eval_batch_size, tokenize=False, verbose=True)
+
+                s1_emb = torch.tensor(s1_emb).to(self.device)
+                s2_emb = torch.tensor(s2_emb).to(self.device)
+                labels = batch[-1].to(self.device)
+
+                tmp_eval_loss = self.classifier_model(s1_emb, s2_emb, labels = labels)
+                logits = self.classifier_model(s1_emb, s2_emb)
+                label_ids = batch[-1].cpu().numpy()
 
             logits = logits.detach().cpu().numpy()
             total_eval_loss += tmp_eval_loss.mean().item()
 
-            nb_eval_examples += batch.input_ids.size(0)
+            nb_eval_examples += batch[-1].size(0)
             nb_eval_steps += 1
             all_logits.append(logits)
             all_labels.append(label_ids)
@@ -248,15 +257,14 @@ class GlueTaskClassifierRunner:
 
     def get_eval_dataloader(self, eval_examples, verbose=True):
         eval_features = convert_examples_to_features(
-            eval_examples, self.label_map, self.rparams.max_seq_length, self.tokenizer,
-            verbose=verbose,
+            eval_examples, self.label_map, verbose=verbose,
         )
-        eval_data, eval_tokens = convert_to_dataset(
+        full_batch = get_full_batch(
             eval_features, label_mode=get_label_mode(self.label_map),
         )
-        eval_sampler = SequentialSampler(eval_data)
+        eval_sampler = SequentialSampler(full_batch.pairs)
         eval_dataloader = DataLoader(
-            eval_data, sampler=eval_sampler, batch_size=self.rparams.eval_batch_size,
+            full_batch.pairs, sampler=eval_sampler, batch_size=self.rparams.eval_batch_size,
         )
-        return HybridLoader(eval_dataloader, eval_tokens)
+        return eval_dataloader
     

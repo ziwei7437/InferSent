@@ -9,19 +9,18 @@ import os
 import sys
 import time
 import argparse
+import json
+import pandas as pd
 
 import logging
 
 import numpy as np
 
 import torch
-#from torch.autograd import Variable
 from torch import optim
 import torch.nn as nn
 
-#from data import get_nli, get_batch, build_vocab
 from tasks import get_task, MnliMismatchedProcessor
-#from mutils import get_optimizer
 from models import InferSent, SimpleClassifier
 
 import initialization
@@ -128,6 +127,9 @@ def get_args(*in_args):
 
     # data
     parser.add_argument("--word_emb_dim", type=int, default=300, help="word embedding dimension")
+
+    # others
+    parser.add_argument("--verbose", action="store_true", help='showing information.')
     
     args = parser.parse_args(*in_args)
     return args
@@ -136,144 +138,6 @@ def get_args(*in_args):
 def print_args(args):
     for k, v in vars(args).items():
         print("  {}: {}".format(k, v))
-
-
-def trainepoch(epoch):
-    print('\nTRAINING : Epoch ' + str(epoch))
-    nli_net.train()
-    all_costs = []
-    logs = []
-    words_count = 0
-
-    last_time = time.time()
-    correct = 0.
-    # shuffle the data
-    permutation = np.random.permutation(len(train['s1']))
-
-    s1 = train['s1'][permutation]
-    s2 = train['s2'][permutation]
-    target = train['label'][permutation]
-
-
-    optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * params.decay if epoch>1\
-        and 'sgd' in params.optimizer else optimizer.param_groups[0]['lr']
-    print('Learning rate : {0}'.format(optimizer.param_groups[0]['lr']))
-
-    for stidx in range(0, len(s1), params.batch_size):
-        # prepare batch
-        s1_batch, s1_len = get_batch(s1[stidx:stidx + params.batch_size],
-                                     word_vec, params.word_emb_dim)
-        s2_batch, s2_len = get_batch(s2[stidx:stidx + params.batch_size],
-                                     word_vec, params.word_emb_dim)
-        s1_batch, s2_batch = Variable(s1_batch.cuda()), Variable(s2_batch.cuda())
-        tgt_batch = Variable(torch.LongTensor(target[stidx:stidx + params.batch_size])).cuda()
-        k = s1_batch.size(1)  # actual batch size
-
-        # model forward
-        output = nli_net((s1_batch, s1_len), (s2_batch, s2_len))
-
-        pred = output.data.max(1)[1]
-        correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
-        assert len(pred) == len(s1[stidx:stidx + params.batch_size])
-
-        # loss
-        loss = loss_fn(output, tgt_batch)
-        all_costs.append(loss.data[0])
-        words_count += (s1_batch.nelement() + s2_batch.nelement()) / params.word_emb_dim
-
-        # backward
-        optimizer.zero_grad()
-        loss.backward()
-
-        # gradient clipping (off by default)
-        shrink_factor = 1
-        total_norm = 0
-
-        for p in nli_net.parameters():
-            if p.requires_grad:
-                p.grad.data.div_(k)  # divide by the actual batch size
-                total_norm += p.grad.data.norm() ** 2
-        total_norm = np.sqrt(total_norm)
-
-        if total_norm > params.max_norm:
-            shrink_factor = params.max_norm / total_norm
-        current_lr = optimizer.param_groups[0]['lr'] # current lr (no external "lr", for adam)
-        optimizer.param_groups[0]['lr'] = current_lr * shrink_factor # just for update
-
-        # optimizer step
-        optimizer.step()
-        optimizer.param_groups[0]['lr'] = current_lr
-
-        if len(all_costs) == 100:
-            logs.append('{0} ; loss {1} ; sentence/s {2} ; words/s {3} ; accuracy train : {4}'.format(
-                            stidx, round(np.mean(all_costs), 2),
-                            int(len(all_costs) * params.batch_size / (time.time() - last_time)),
-                            int(words_count * 1.0 / (time.time() - last_time)),
-                            round(100.*correct/(stidx+k), 2)))
-            print(logs[-1])
-            last_time = time.time()
-            words_count = 0
-            all_costs = []
-    train_acc = round(100 * correct/len(s1), 2)
-    print('results : epoch {0} ; mean accuracy train : {1}'
-          .format(epoch, train_acc))
-    return train_acc
-
-
-def evaluate(epoch, eval_type='valid', final_eval=False):
-    nli_net.eval()
-    correct = 0.
-    global val_acc_best, lr, stop_training, adam_stop
-
-    if eval_type == 'valid':
-        print('\nVALIDATION : Epoch {0}'.format(epoch))
-
-    s1 = valid['s1'] if eval_type == 'valid' else test['s1']
-    s2 = valid['s2'] if eval_type == 'valid' else test['s2']
-    target = valid['label'] if eval_type == 'valid' else test['label']
-
-    for i in range(0, len(s1), params.batch_size):
-        # prepare batch
-        s1_batch, s1_len = get_batch(s1[i:i + params.batch_size], word_vec, params.word_emb_dim)
-        s2_batch, s2_len = get_batch(s2[i:i + params.batch_size], word_vec, params.word_emb_dim)
-        s1_batch, s2_batch = Variable(s1_batch.cuda()), Variable(s2_batch.cuda())
-        tgt_batch = Variable(torch.LongTensor(target[i:i + params.batch_size])).cuda()
-
-        # model forward
-        output = nli_net((s1_batch, s1_len), (s2_batch, s2_len))
-
-        pred = output.data.max(1)[1]
-        correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
-
-    # save model
-    eval_acc = round(100 * correct / len(s1), 2)
-    if final_eval:
-        print('finalgrep : accuracy {0} : {1}'.format(eval_type, eval_acc))
-    else:
-        print('togrep : results : epoch {0} ; mean accuracy {1} :\
-              {2}'.format(epoch, eval_type, eval_acc))
-
-    if eval_type == 'valid' and epoch <= params.n_epochs:
-        if eval_acc > val_acc_best:
-            print('saving model at epoch {0}'.format(epoch))
-            if not os.path.exists(params.outputdir):
-                os.makedirs(params.outputdir)
-            torch.save(nli_net.state_dict(), os.path.join(params.outputdir,
-                       params.outputmodelname))
-            val_acc_best = eval_acc
-        else:
-            if 'sgd' in params.optimizer:
-                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] / params.lrshrink
-                print('Shrinking lr by : {0}. New lr = {1}'
-                      .format(params.lrshrink,
-                              optimizer.param_groups[0]['lr']))
-                if optimizer.param_groups[0]['lr'] < params.minlr:
-                    stop_training = True
-            if 'adam' in params.optimizer:
-                # early stopping (at 2nd decrease in accuracy)
-                stop_training = adam_stop
-                adam_stop = True
-    return eval_acc
 
 
 def main():
@@ -289,6 +153,8 @@ def main():
     initialization.init_output_dir(args)
     initialization.save_args(args)
     task = get_task(args.task_name, args.data_dir)
+    use_cuda = False if args.no_cuda else True
+    verbose = args.verbose
 
 
     # model config
@@ -303,17 +169,19 @@ def main():
         'n_classes'      :  args.n_classes      ,
         'pool_type'      :  args.pool_type      ,
         'nonlinear_fc'   :  args.nonlinear_fc   ,
-        'use_cuda'       :  not args.no_cuda    ,
+        'use_cuda'       :  use_cuda            ,
         'version'        :  args.model_version  ,
         'dropout_prob'   :  args.dropout_prob   ,
     }
 
     # load model
+    if verbose:
+        print('loading model...')
     model = InferSent(config)
     model.load_state_dict(torch.load(args.model_path))
     model = model.cuda() if not args.no_cuda else model
     model.set_w2v_path(args.word_emb_path)
-    model.build_vocab_k_words(k=args.k_freq_words)
+    model.build_vocab_k_words(k=args.k_freq_words, verbose=verbose)
 
     # load classifier
     classifier = SimpleClassifier(config)
@@ -337,7 +205,8 @@ def main():
         warmup_proportion=args.warmup_proportion,
         num_train_epochs=args.num_train_epochs,
         train_batch_size=args.train_batch_size,
-        eval_batch_size=args.eval_batch_size
+        eval_batch_size=args.eval_batch_size,
+        verbose=verbose
     )
     
     # create runner class for training and evaluation tasks.
@@ -356,13 +225,34 @@ def main():
 
     if args.do_val:
         val_examples = task.get_dev_examples()
-        results = runner.run_val() # TODO...
+        results = runner.run_val(val_examples, task_name=task.name, verbose=verbose)
 
+        df = pd.DataFrame(results["logits"])
+        df.to_csv(os.path.join(args.output_dir, "val_preds.csv"), header=False, index=False)
+        metrics_str = json.dumps({"loss": results["loss"], "metrics": results["metrics"]}, indent=2)
+        print(metrics_str)
+        with open(os.path.join(args.output_dir, "val_metrics.json"), "w") as f:
+            f.write(metrics_str)
 
         # HACK for MNLI-mismatched
         if task.name == "mnli":
             mm_val_example = MnliMismatchedProcessor().get_dev_examples(task.data_dir)
-            mm_results = runner.run_val()# TODO...
+            mm_results = runner.run_val(mm_val_example, task_name=task.name, verbose=verbose)
+
+            df = pd.DataFrame(results["logits"])
+            df.to_csv(os.path.join(args.output_dir, "mm_val_preds.csv"), header=False, index=False)
+            combined_metrics = {}
+            for k, v in results["metrics"].items():
+                combined_metrics[k] = v
+            for k, v in mm_results["metrics"].items():
+                combined_metrics["mm-"+k] = v
+            combined_metrics_str = json.dumps({
+                "loss": results["loss"],
+                "metrics": combined_metrics,
+            }, indent=2)
+            print(combined_metrics_str)
+            with open(os.path.join(args.output_dir, "val_metrics.json"), "w") as f:
+                f.write(combined_metrics_str)
 
 
 
