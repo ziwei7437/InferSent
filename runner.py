@@ -9,6 +9,8 @@ import logging
 from tqdm import tqdm, trange
 from tasks import InputExample, InputFeatures
 
+import numpy as np
+from evaluate import compute_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -268,3 +270,14 @@ class GlueTaskClassifierRunner:
         )
         return eval_dataloader
     
+
+def compute_task_metrics(task_name, logits, labels):
+    if logits.shape[1] == 1:
+        pred_arr = logits.reshape(-1)
+    else:
+        pred_arr = np.argmax(logits, axis=1)
+    return compute_metrics(
+        task_name=task_name,
+        pred_srs=pred_arr,
+        label_srs=labels,
+    )
