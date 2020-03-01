@@ -181,6 +181,7 @@ def main():
 
     # load classifier
     classifier = SimpleClassifier(config)
+    classifier = classifier.cuda() if not args.no_cuda else classifier
 
     # get train examples
     train_examples = task.get_train_examples()
