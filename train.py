@@ -117,10 +117,6 @@ def get_args(*in_args):
     # gpu
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID")
     parser.add_argument("--seed", type=int, default=-1, help="seed")
-    parser.add_argument("--local_rank",
-                    type=int,
-                    default=-1,
-                    help="local_rank for distributed training on gpus")
     parser.add_argument("--no_cuda",
                         action='store_true',
                         help="Whether not to use CUDA when available")
@@ -181,7 +177,7 @@ def main():
     model.load_state_dict(torch.load(args.model_path))
     model = model.cuda() if not args.no_cuda else model
     model.set_w2v_path(args.word_emb_path)
-    model.build_vocab_k_words(k=args.k_freq_words, verbose=verbose)
+    model.build_vocab_k_words(K=args.k_freq_words, verbose=verbose)
 
     # load classifier
     classifier = SimpleClassifier(config)

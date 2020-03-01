@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import logging
 from tqdm import tqdm, trange
-from .tasks import InputExample, InputFeatures
+from tasks import InputExample, InputFeatures
 
 
 logger = logging.getLogger(__name__)
