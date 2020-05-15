@@ -1,6 +1,6 @@
 # SentEval data and .pyc files
 
-
+.idea
 
 # python
 __pycache__/
