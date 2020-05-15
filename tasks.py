@@ -423,6 +423,7 @@ class WnliProcessor(DataProcessor):
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
 
+
 PROCESSORS = {
     "mrpc": MrpcProcessor,
     "qqp": QqpProcessor,
@@ -440,7 +441,9 @@ DEFAULT_FOLDER_NAMES = {
     "qnli": "QNLI",
     "rte": "RTE",
     "snli": "SNLI",
+    "wnli": "WNLI"
 }
+
 
 class Task:
     def __init__(self, name, processor, data_dir):
