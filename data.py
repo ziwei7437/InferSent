@@ -83,8 +83,3 @@ def get_nli(data_path):
     test = {'s1': s1['test']['sent'], 's2': s2['test']['sent'],
             'label': target['test']['data']}
     return train, dev, test
-
-
-
-class InputExamples:
-    

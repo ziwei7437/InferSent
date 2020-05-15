@@ -14,8 +14,10 @@ from evaluate import compute_metrics
 
 logger = logging.getLogger(__name__)
 
+
 def is_null_label_map(label_map):
     return len(label_map) == 1 and label_map[None] == 0
+
 
 def get_label_mode(label_map):
     if is_null_label_map(label_map):
@@ -23,10 +25,12 @@ def get_label_mode(label_map):
     else:
         return LabelModes.CLASSIFICATION
 
+
 def warmup_linear(x, warmup=0.002):
     if x < warmup:
         return x/warmup
     return 1.0 - x
+
 
 def convert_example_to_feature(example, label_map):
     '''convert example to feature. only change the label into feature if label map exists'''
@@ -42,6 +46,7 @@ def convert_example_to_feature(example, label_map):
         label_id=label_id
     )
 
+
 def convert_examples_to_features(examples, label_map, verbose=True):
     """Load a dataset into a list of `InputFeatures`."""
     features = []
@@ -56,9 +61,11 @@ def convert_examples_to_features(examples, label_map, verbose=True):
         features.append(feature_instance)
     return features
 
+
 def get_full_batch(features, label_mode):
     full_batch = features_to_data(features, label_mode=label_mode)
     return full_batch
+
 
 def features_to_data(features, label_mode):
     if label_mode == LabelModes.CLASSIFICATION:

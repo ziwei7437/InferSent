@@ -41,15 +41,15 @@ def get_args(*in_args):
                         default=None,
                         required=True,
                         help='the name of the task to train.')
-    parser.add_argument("--output_dir", 
-                        type=str, 
+    parser.add_argument("--output_dir",
+                        type=str,
                         default=None,
                         required=True,
                         help="Output directory")
     parser.add_argument("--word_emb_path",
-                        type=str, 
+                        type=str,
                         required=True,
-                        default="dataset/GloVe/glove.840B.300d.txt", 
+                        default="dataset/GloVe/glove.840B.300d.txt",
                         help="word embedding file path")
     parser.add_argument("--model_path",
                         type=str,
@@ -113,7 +113,6 @@ def get_args(*in_args):
     parser.add_argument("--model_version", type=int, default=1, help="model version to use")
     parser.add_argument("--k_freq_words", type=int, default=100000, help="k most frequent words")
 
-
     # gpu
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID")
     parser.add_argument("--seed", type=int, default=-1, help="seed")
@@ -126,7 +125,7 @@ def get_args(*in_args):
 
     # others
     parser.add_argument("--verbose", action="store_true", help='showing information.')
-    
+
     args = parser.parse_args(*in_args)
     return args
 
@@ -152,22 +151,21 @@ def main():
     use_cuda = False if args.no_cuda else True
     verbose = args.verbose
 
-
     # model config
     config = {
-        'word_emb_dim'   :  args.word_emb_dim   ,
-        'enc_lstm_dim'   :  args.enc_lstm_dim   ,
-        'n_enc_layers'   :  args.n_enc_layers   ,
-        'dpout_model'    :  args.dpout_model    ,
-        'dpout_fc'       :  args.dpout_fc       ,
-        'fc_dim'         :  args.fc_dim         ,
-        'bsize'          :  args.batch_size     ,
-        'n_classes'      :  args.n_classes      ,
-        'pool_type'      :  args.pool_type      ,
-        'nonlinear_fc'   :  args.nonlinear_fc   ,
-        'use_cuda'       :  use_cuda            ,
-        'version'        :  args.model_version  ,
-        'dropout_prob'   :  args.dropout_prob   ,
+        'word_emb_dim': args.word_emb_dim,
+        'enc_lstm_dim': args.enc_lstm_dim,
+        'n_enc_layers': args.n_enc_layers,
+        'dpout_model': args.dpout_model,
+        'dpout_fc': args.dpout_fc,
+        'fc_dim': args.fc_dim,
+        'bsize': args.batch_size,
+        'n_classes': args.n_classes,
+        'pool_type': args.pool_type,
+        'nonlinear_fc': args.nonlinear_fc,
+        'use_cuda': use_cuda,
+        'version': args.model_version,
+        'dropout_prob': args.dropout_prob,
     }
 
     # load model
@@ -188,7 +186,6 @@ def main():
     # calculate t_total
     t_total = initialization.get_opt_train_steps(len(train_examples), args)
 
-
     # build optimizer.
     optimizer = optim.SGD(classifier.parameters(), lr=0.001, momentum=0.9)
 
@@ -205,17 +202,16 @@ def main():
         eval_batch_size=args.eval_batch_size,
         verbose=verbose
     )
-    
+
     # create runner class for training and evaluation tasks.
     runner = GlueTaskClassifierRunner(
-        encoder_model = model,
-        classifier_model = classifier,
-        optimizer = optimizer,
-        label_list = task.get_labels(),
-        device = device,
-        rparams = r_params
+        encoder_model=model,
+        classifier_model=classifier,
+        optimizer=optimizer,
+        label_list=task.get_labels(),
+        device=device,
+        rparams=r_params
     )
-
 
     if args.do_train:
         runner.run_train_classifier(train_examples)
@@ -242,7 +238,7 @@ def main():
             for k, v in results["metrics"].items():
                 combined_metrics[k] = v
             for k, v in mm_results["metrics"].items():
-                combined_metrics["mm-"+k] = v
+                combined_metrics["mm-" + k] = v
             combined_metrics_str = json.dumps({
                 "loss": results["loss"],
                 "metrics": combined_metrics,
@@ -250,10 +246,6 @@ def main():
             print(combined_metrics_str)
             with open(os.path.join(args.output_dir, "val_metrics.json"), "w") as f:
                 f.write(combined_metrics_str)
-
-
-
-
 
 
 if __name__ == "__main__":

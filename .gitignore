@@ -15,8 +15,8 @@ __pycache__/
 *.pkl
 
 # datasets
-dataset/SNLI/
-dataset/MultiNLI/
-dataset/AllNLI/
-dataset/GloVe
-dataset/fastText
+dataset/
+
+InfersentEmbeddings/
+
+savedir/
