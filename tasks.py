@@ -440,7 +440,6 @@ DEFAULT_FOLDER_NAMES = {
     "qnli": "QNLI",
     "rte": "RTE",
     "snli": "SNLI",
-    "wnli": "WNLI"
 }
 
 class Task:
