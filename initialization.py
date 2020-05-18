@@ -75,5 +75,3 @@ def get_opt_train_steps(num_train_examples, args):
     if args.local_rank != -1:
         t_total = t_total // torch.distributed.get_world_size()
     return t_total
-
-    

@@ -6,7 +6,7 @@ import gc
 import os
 
 from tqdm.auto import tqdm, trange
-from tasks import InputExample, InputFeatures, get_task
+from tasks import get_task, MnliMismatchedProcessor
 from models import InferSent
 
 
@@ -33,12 +33,16 @@ def get_dataloader(input_examples, label_map):
     return dataloader
 
 
+def init_output_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+
 # configuration
-dataset_path = 'dataset/SNLI'
-output_dir = 'savedir/SNLI'
+dataset_path = 'dataset/WNLI'
+output_dir = 'savedir/WNLI'
 word_emb_path = 'dataset/fastText/crawl-300d-2M.vec'
 model_path = 'dataset/encoder/infersent2.pkl'
-task_name = 'snli'
+task_name = 'wnli'
 
 config = {
     'word_emb_dim': 300,
@@ -68,11 +72,11 @@ def run_encoding(loader, model, mode='train'):
             s2_emb = model.encode(s2, bsize=config['bsize'], tokenize=True, verbose=False)
         s1_emb = torch.tensor(s1_emb)
         s2_emb = torch.tensor(s2_emb)
-        labels = batch[-1] if mode != 'test' else None
+        labels = batch[-1] if (mode != 'test' or mode != 'mm_test') else None
 
         tensor_list_a.append(s1_emb)
         tensor_list_b.append(s2_emb)
-        if mode != 'test':
+        if mode != 'test' or mode != 'mm_test':
             labels_tensor_list.append(labels)
 
         if (step + 1) % 2000 == 0:
@@ -85,7 +89,7 @@ def run_encoding(loader, model, mode='train'):
             print("shape of {} set sentence a: {}".format(mode, train_emb_a.shape))
             print("shape of {} set sentence b: {}".format(mode, train_emb_b.shape))
 
-            if mode != 'test':
+            if mode != 'test' or mode != 'mm_test':
                 train_labels = torch.cat(labels_tensor_list).cpu()
                 labels_tensor_list = []
                 print("shape of {} set labels: {}".format(mode, train_labels.shape))
@@ -106,7 +110,7 @@ def run_encoding(loader, model, mode='train'):
     print("shape of {} set sentence a: {}".format(mode, train_emb_a.shape))
     print("shape of {} set sentence b: {}".format(mode, train_emb_b.shape))
 
-    if mode != 'test':
+    if mode != 'test' or 'mm_test':
         train_labels = torch.cat(labels_tensor_list).cpu()
         print("shape of {} set labels: {}".format(mode, train_labels.shape))
         dataset_embeddings = TensorDataset(train_emb_a, train_emb_b, train_labels)
@@ -122,6 +126,7 @@ def run_encoding(loader, model, mode='train'):
 
 
 def main():
+    init_output_dir(output_dir)
     # prepare dataset
     task = get_task(task_name, dataset_path)
     label_list = task.get_labels()
@@ -164,6 +169,28 @@ def main():
         run_encoding(loader=test_loader,
                      model=model,
                      mode='test')
+
+    # HACK FOR MNLI mis-matched
+    if task_name == 'mnli':
+        print("Run Embedding for MNLI Mis-Matched Datasets")
+        print("loading raw data ... ")
+        mm_val_example = MnliMismatchedProcessor().get_dev_examples(dataset_path)
+        mm_test_examples = MnliMismatchedProcessor().get_test_examples(dataset_path)
+        print("converting to data loader ... ")
+        mm_val_loader = get_dataloader(mm_val_example, label_map)
+        mm_test_loader = get_dataloader(mm_test_examples, label_map)
+
+        print("Run embedding for mm_dev set")
+        for _ in trange(1, desc="Epoch"):
+            run_encoding(loader=mm_val_loader,
+                         model=model,
+                         mode='mm_dev')
+
+        print("Run embedding for test set")
+        for _ in trange(1, desc="Epoch"):
+            run_encoding(loader=mm_test_loader,
+                         model=model,
+                         mode='mm_test')
 
 
 if __name__ == '__main__':
